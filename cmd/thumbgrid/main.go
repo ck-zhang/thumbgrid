@@ -44,9 +44,10 @@ type Candidate struct {
 }
 
 const (
-	filterBoth   = "both"
-	filterImages = "images"
-	filterVideos = "videos"
+	filterBoth       = "both"
+	filterImages     = "images"
+	filterVideos     = "videos"
+	selectionFileEnv = "THUMBGRID_SELECTION_FILE"
 )
 
 func main() {
@@ -83,6 +84,13 @@ func main() {
 		sel = make([]string, 0, len(cands))
 		for _, c := range cands {
 			sel = append(sel, toAbs(c.Path))
+		}
+	}
+
+	selectionFile := strings.TrimSpace(os.Getenv(selectionFileEnv))
+	if selectionFile != "" {
+		if err := writeSelectionFile(selectionFile, sel); err != nil {
+			fatalUsage(74, "write selection file: %v", err)
 		}
 	}
 
@@ -125,7 +133,8 @@ Keys:
   q / Esc                     Cancel
 
 Environment:
-  THUMBGRID_CACHE_DIR         Override cache directory`)
+  THUMBGRID_CACHE_DIR         Override cache directory
+  THUMBGRID_SELECTION_FILE    Write accepted paths to file`)
 		os.Exit(0)
 	}
 	if *showVersion {
@@ -166,6 +175,41 @@ func normalizeFilter(filter string) (string, error) {
 func fatalUsage(code int, format string, a ...any) {
 	fmt.Fprintf(os.Stderr, "thumbgrid: "+format+"\n", a...)
 	os.Exit(code)
+}
+
+func writeSelectionFile(dest string, sel []string) error {
+	if dest == "" {
+		return nil
+	}
+	dir := filepath.Dir(dest)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	tmp := dest + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	w := bufio.NewWriter(f)
+	for _, p := range sel {
+		if _, err := fmt.Fprintln(w, p); err != nil {
+			f.Close()
+			os.Remove(tmp)
+			return err
+		}
+	}
+	if err := w.Flush(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, dest)
 }
 
 func defaultCacheDir() string {

@@ -2,8 +2,6 @@ module github.com/ck-zhang/thumbgrid
 
 go 1.23
 
-toolchain go1.23
-
 require (
 	github.com/mattn/go-runewidth v0.0.16
 	golang.org/x/sys v0.25.0

@@ -1,0 +1,7 @@
+thumbgrid
+
+.cache/
+.gocache/
+.gomodcache/
+
+vendor/

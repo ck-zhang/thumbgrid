@@ -653,14 +653,23 @@ func runGridTUI(cands []Candidate, cfg Config) ([]string, int, error) {
 			fmt.Fprintf(os.Stdout, "\x1b[%d;%dH|%s|", py+tileH-2, px, line)
 		}
 	}
+	firstDraw := true
 	draw := func() {
 		term.Lock()
-		fmt.Fprint(os.Stdout, "\x1b[2J\x1b[H")
+		defer term.Unlock()
+		if firstDraw {
+			fmt.Fprint(os.Stdout, "\x1b[2J")
+			firstDraw = false
+		}
+		fmt.Fprint(os.Stdout, "\x1b[H")
 		header := fmt.Sprintf("[%s] Arrows/hjkl move • Enter accept • q/Esc cancel", ternary(useGraphics, renderer.Name(), "none"))
 		if dispWidth(header) > w {
 			header = runewidth.Truncate(header, w, "")
 		}
 		fmt.Fprintf(os.Stdout, "\x1b[1;1H%s\x1b[K", header)
+		for row := 0; row < contentH; row++ {
+			fmt.Fprintf(os.Stdout, "\x1b[%d;1H\x1b[K", contentY+row)
+		}
 		gridX, gridY, _, _, tileW, tileH, cols, rows := computeLayout()
 
 		prefetchRows := 1
@@ -718,7 +727,6 @@ func runGridTUI(cands []Candidate, cfg Config) ([]string, int, error) {
 			}
 			fmt.Fprintf(os.Stdout, "\x1b[%d;1H%s\x1b[K", h, s)
 		}
-		term.Unlock()
 	}
 	dataRows := func() int {
 		_, _, _, _, _, _, cols, _ := computeLayout()

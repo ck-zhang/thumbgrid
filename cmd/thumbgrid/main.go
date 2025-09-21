@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -594,7 +595,7 @@ func runGridTUI(cands []Candidate, cfg Config) ([]string, int, error) {
 		return "", false
 	}
 
-	drawTile := func(idx, px, py, tileW, tileH int, renderImages bool) {
+	drawTile := func(buf *bytes.Buffer, idx, px, py, tileW, tileH int, renderImages bool) {
 		innerW := tileW - 2
 		if innerW < 2 {
 			innerW = 2
@@ -607,17 +608,17 @@ func runGridTUI(cands []Candidate, cfg Config) ([]string, int, error) {
 		}
 		top := corner + strings.Repeat(hChar, max(0, tileW-2)) + corner
 		bot := top
-		fmt.Fprintf(os.Stdout, "\x1b[%d;%dH%s", py, px, top)
-		fmt.Fprintf(os.Stdout, "\x1b[%d;%dH%s", py+tileH-1, px, bot)
+		fmt.Fprintf(buf, "\x1b[%d;%dH%s", py, px, top)
+		fmt.Fprintf(buf, "\x1b[%d;%dH%s", py+tileH-1, px, bot)
 
 		for rr := 1; rr < tileH-1; rr++ {
-			fmt.Fprintf(os.Stdout, "\x1b[%d;%dH|", py+rr, px)
-			fmt.Fprintf(os.Stdout, "\x1b[%d;%dH|", py+rr, px+tileW-1)
+			fmt.Fprintf(buf, "\x1b[%d;%dH|", py+rr, px)
+			fmt.Fprintf(buf, "\x1b[%d;%dH|", py+rr, px+tileW-1)
 		}
 
 		if idx < 0 || idx >= len(cands) {
 			for r := 1; r < tileH-1; r++ {
-				fmt.Fprintf(os.Stdout, "\x1b[%d;%dH|%s|", py+r, px, strings.Repeat(" ", innerW))
+				fmt.Fprintf(buf, "\x1b[%d;%dH|%s|", py+r, px, strings.Repeat(" ", innerW))
 			}
 			return
 		}
@@ -627,7 +628,7 @@ func runGridTUI(cands []Candidate, cfg Config) ([]string, int, error) {
 		isImg := c.Kind == "image" || c.Kind == "video"
 		if renderImages || !useGraphics || !isImg {
 			for r := 1; r < tileH-1; r++ {
-				fmt.Fprintf(os.Stdout, "\x1b[%d;%dH|%s|", py+r, px, strings.Repeat(" ", innerW))
+				fmt.Fprintf(buf, "\x1b[%d;%dH|%s|", py+r, px, strings.Repeat(" ", innerW))
 			}
 		}
 		if renderImages && isImg {
@@ -644,31 +645,33 @@ func runGridTUI(cands []Candidate, cfg Config) ([]string, int, error) {
 			}
 			ix := px + 1 + max(0, (innerW-dispWidth(icon))/2)
 			iy := py + 1 + max(0, (imgH-1)/2)
-			fmt.Fprintf(os.Stdout, "\x1b[%d;%dH%s", iy, ix, icon)
+			fmt.Fprintf(buf, "\x1b[%d;%dH%s", iy, ix, icon)
 		}
 		name := truncateMiddleDisp(c.Name, innerW-3)
 		line := fmt.Sprintf("%c %s", ternary(idx == cur, '>', ' '), name)
 		line = padRightToWidth(line, innerW)
 		if tileH >= 3 {
-			fmt.Fprintf(os.Stdout, "\x1b[%d;%dH|%s|", py+tileH-2, px, line)
+			fmt.Fprintf(buf, "\x1b[%d;%dH|%s|", py+tileH-2, px, line)
 		}
 	}
 	firstDraw := true
+	var frameBuf bytes.Buffer
 	draw := func() {
 		term.Lock()
 		defer term.Unlock()
+		frameBuf.Reset()
 		if firstDraw {
-			fmt.Fprint(os.Stdout, "\x1b[2J")
+			fmt.Fprint(&frameBuf, "\x1b[2J")
 			firstDraw = false
 		}
-		fmt.Fprint(os.Stdout, "\x1b[H")
+		fmt.Fprint(&frameBuf, "\x1b[H")
 		header := fmt.Sprintf("[%s] Arrows/hjkl move • Enter accept • q/Esc cancel", ternary(useGraphics, renderer.Name(), "none"))
 		if dispWidth(header) > w {
 			header = runewidth.Truncate(header, w, "")
 		}
-		fmt.Fprintf(os.Stdout, "\x1b[1;1H%s\x1b[K", header)
+		fmt.Fprintf(&frameBuf, "\x1b[1;1H%s\x1b[K", header)
 		for row := 0; row < contentH; row++ {
-			fmt.Fprintf(os.Stdout, "\x1b[%d;1H\x1b[K", contentY+row)
+			fmt.Fprintf(&frameBuf, "\x1b[%d;1H\x1b[K", contentY+row)
 		}
 		gridX, gridY, _, _, tileW, tileH, cols, rows := computeLayout()
 
@@ -706,7 +709,7 @@ func runGridTUI(cands []Candidate, cfg Config) ([]string, int, error) {
 					idx := (topRow+r)*cols + ccol
 					px := gridX + ccol*(tileW+gutter)
 					py := gridY + r*(tileH+gutter)
-					drawTile(idx, px, py, tileW, tileH, renderImages)
+					drawTile(&frameBuf, idx, px, py, tileW, tileH, renderImages)
 				}
 			}
 		}
@@ -725,8 +728,9 @@ func runGridTUI(cands []Candidate, cfg Config) ([]string, int, error) {
 			if dispWidth(s) > w {
 				s = runewidth.Truncate(s, w, "")
 			}
-			fmt.Fprintf(os.Stdout, "\x1b[%d;1H%s\x1b[K", h, s)
+			fmt.Fprintf(&frameBuf, "\x1b[%d;1H%s\x1b[K", h, s)
 		}
+		_, _ = os.Stdout.Write(frameBuf.Bytes())
 	}
 	dataRows := func() int {
 		_, _, _, _, _, _, cols, _ := computeLayout()
